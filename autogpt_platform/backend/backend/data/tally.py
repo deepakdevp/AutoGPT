@@ -337,6 +337,22 @@ Form data:
 
 _EXTRACTION_SUFFIX = "\n\nReturn ONLY valid JSON."
 
+_PROMPT_GENERATION_PROMPT = """\
+You are a productivity assistant. Based on the following business context about a user, \
+generate exactly 3 short action prompts (each under 20 words) that would help this person \
+get started with automating their work.
+
+The prompts should be:
+- Specific to their industry, role, and pain points
+- Actionable and conversational in tone
+- Focused on automation opportunities
+
+Business context:
+{context}
+
+Return a JSON object with a single key "prompts" containing an array of exactly 3 strings.
+"""
+
 
 async def extract_business_understanding(
     formatted_text: str,
@@ -379,6 +395,81 @@ async def extract_business_understanding(
     return BusinessUnderstandingInput(**cleaned)
 
 
+async def generate_suggested_prompts(
+    understanding: BusinessUnderstandingInput,
+) -> list[str]:
+    """Generate 3 suggested prompts based on extracted business understanding.
+
+    Returns an empty list on any failure so the caller can proceed without prompts.
+    """
+    api_key = _settings.secrets.open_router_api_key
+    client = AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+
+    context_parts: list[str] = []
+    if understanding.user_name:
+        context_parts.append(f"Name: {understanding.user_name}")
+    if understanding.job_title:
+        context_parts.append(f"Role: {understanding.job_title}")
+    if understanding.business_name:
+        context_parts.append(f"Company: {understanding.business_name}")
+    if understanding.industry:
+        context_parts.append(f"Industry: {understanding.industry}")
+    if understanding.pain_points:
+        context_parts.append(f"Pain points: {', '.join(understanding.pain_points)}")
+    if understanding.manual_tasks:
+        context_parts.append(f"Manual tasks: {', '.join(understanding.manual_tasks)}")
+    if understanding.automation_goals:
+        context_parts.append(
+            f"Automation goals: {', '.join(understanding.automation_goals)}"
+        )
+    if understanding.key_workflows:
+        context_parts.append(f"Key workflows: {', '.join(understanding.key_workflows)}")
+
+    if not context_parts:
+        logger.debug("Tally: no context for prompt generation, skipping")
+        return []
+
+    context = "\n".join(context_parts)
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="openai/gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": _PROMPT_GENERATION_PROMPT.format(context=context),
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.7,
+            ),
+            timeout=_LLM_TIMEOUT,
+        )
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Tally: prompt generation LLM call failed", exc_info=True)
+        return []
+
+    raw = response.choices[0].message.content or "{}"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Tally: prompt generation returned invalid JSON")
+        return []
+
+    prompts = data.get("prompts", [])
+    if not isinstance(prompts, list):
+        return []
+
+    valid_prompts = [
+        str(p).strip()
+        for p in prompts
+        if isinstance(p, str) and len(p.strip().split()) <= 20
+    ][:3]
+
+    return valid_prompts
+
+
 async def get_business_understanding_input_from_tally(
     email: str,
     *,
@@ -404,7 +495,14 @@ async def get_business_understanding_input_from_tally(
         logger.warning("Tally: formatted submission was empty, skipping")
         return None
 
-    return await extract_business_understanding(formatted)
+    understanding_input = await extract_business_understanding(formatted)
+
+    # Generate suggested prompts based on the extracted understanding
+    prompts = await generate_suggested_prompts(understanding_input)
+    if prompts:
+        understanding_input.suggested_prompts = prompts
+
+    return understanding_input
 
 
 async def populate_understanding_from_tally(user_id: str, email: str) -> None:

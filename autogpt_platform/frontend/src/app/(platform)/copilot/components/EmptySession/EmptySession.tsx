@@ -1,5 +1,6 @@
 "use client";
 
+import { useGetV2GetSuggestedPrompts } from "@/app/api/__generated__/endpoints/chat/chat";
 import { ChatInput } from "@/app/(platform)/copilot/components/ChatInput/ChatInput";
 import { Button } from "@/components/atoms/Button/Button";
 import { Text } from "@/components/atoms/Text/Text";
@@ -33,7 +34,15 @@ export function EmptySession({
 }: Props) {
   const { user } = useSupabase();
   const greetingName = getGreetingName(user);
-  const quickActions = getQuickActions();
+
+  const { data: suggestedPromptsResponse } = useGetV2GetSuggestedPrompts({
+    query: { staleTime: Infinity },
+  });
+  const customPrompts =
+    suggestedPromptsResponse?.status === 200
+      ? suggestedPromptsResponse.data.prompts
+      : undefined;
+  const quickActions = getQuickActions(customPrompts);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [inputPlaceholder, setInputPlaceholder] = useState(
     getInputPlaceholder(),
