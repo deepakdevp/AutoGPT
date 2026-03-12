@@ -6,17 +6,12 @@ import {
   TooltipTrigger,
 } from "@/components/atoms/Tooltip/BaseTooltip";
 import {
-  ChalkboardIcon,
-  CircleNotchIcon,
   FrameCornersIcon,
   MinusIcon,
   PlusIcon,
 } from "@phosphor-icons/react/dist/ssr";
 import { LockIcon, LockOpenIcon } from "lucide-react";
-import { memo, useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { useTutorialStore } from "@/app/(platform)/build/stores/tutorialStore";
-import { startTutorial, setTutorialLoadingCallback } from "../../tutorial";
+import { memo } from "react";
 
 export const CustomControls = memo(
   ({
@@ -27,28 +22,6 @@ export const CustomControls = memo(
     setIsLocked: (isLocked: boolean) => void;
   }) => {
     const { zoomIn, zoomOut, fitView } = useReactFlow();
-    const { isTutorialRunning, setIsTutorialRunning } = useTutorialStore();
-    const [isTutorialLoading, setIsTutorialLoading] = useState(false);
-    const searchParams = useSearchParams();
-    const router = useRouter();
-
-    useEffect(() => {
-      setTutorialLoadingCallback(setIsTutorialLoading);
-      return () => setTutorialLoadingCallback(() => {});
-    }, []);
-
-    const handleTutorialClick = () => {
-      if (isTutorialLoading) return;
-
-      const flowId = searchParams.get("flowID");
-      if (flowId) {
-        router.push("/build?view=new");
-        return;
-      }
-
-      startTutorial();
-      setIsTutorialRunning(true);
-    };
 
     const controls = [
       {
@@ -64,18 +37,6 @@ export const CustomControls = memo(
         label: "Zoom Out",
         onClick: () => zoomOut(),
         className: "h-10 w-10 border-none",
-      },
-      {
-        id: "tutorial-button",
-        icon: isTutorialLoading ? (
-          <CircleNotchIcon className="size-3.5 animate-spin text-zinc-600" />
-        ) : (
-          <ChalkboardIcon className="size-3.5 text-zinc-600" />
-        ),
-        label: isTutorialLoading ? "Loading Tutorial..." : "Start Tutorial",
-        onClick: handleTutorialClick,
-        className: `h-10 w-10 border-none ${isTutorialRunning || isTutorialLoading ? "bg-zinc-100" : "bg-white"}`,
-        disabled: isTutorialLoading,
       },
       {
         id: "fit-view-button",
